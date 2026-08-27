@@ -1,0 +1,173 @@
+*cottage.txt*  Transparent Age-encrypted Secrets Management with Cottage
+
+Author:  sayanarijit
+License: MIT
+Website: https://github.com/sayanarijit/cottage.vim
+
+==============================================================================
+CONTENTS                                                     *cottage-contents*
+
+    1. Introduction .............................. |cottage-introduction|
+    2. Installation .............................. |cottage-installation|
+    3. How It Works .............................. |cottage-how-it-works|
+    4. Commands .................................. |cottage-commands|
+    5. Configuration ............................. |cottage-configuration|
+    6. Health Check .............................. |cottage-health|
+    7. License ................................... |cottage-license|
+
+==============================================================================
+1. INTRODUCTION                                           *cottage-introduction*
+
+cottage.vim is a Vim / Neovim plugin for transparently editing files encrypted
+with Cottage (https://github.com/sayanarijit/cottage) — a modern git-based,
+age-encrypted secrets manager for teams.
+
+Key Features:
+- Auto-detects or downloads/installs the `ctg` binary automatically.
+- Transparently decrypts `*.cott.age` files on open into plaintext buffers.
+- Keeps syntax highlighting, filetype detection, and linters working seamlessly.
+- Syncs/encrypts changes to the `.cott.age` file on `:write`.
+- Auto-encrypts and cleans (removes) the plaintext file on buffer close (`:bd`,
+  `:bw`, `:q`) or editor exit (`VimLeavePre`).
+- Safe by default: disables swapfiles and backup files on secret buffers to
+  prevent plaintext leakage.
+
+==============================================================================
+2. INSTALLATION                                           *cottage-installation*
+
+Using lazy.nvim (Neovim): >lua
+    {
+      "sayanarijit/cottage.vim",
+      event = "VeryLazy",
+    }
+<
+Using vim-plug (Vim / Neovim): >vim
+    Plug 'sayanarijit/cottage.vim'
+<
+Using packer.nvim: >lua
+    use 'sayanarijit/cottage.vim'
+<
+Native package (Vim 8+ / Neovim): >bash
+    git clone https://github.com/sayanarijit/cottage.vim \
+      ~/.vim/pack/plugins/start/cottage.vim
+<
+
+==============================================================================
+3. HOW IT WORKS                                           *cottage-how-it-works*
+
+Opening `.cott.age` files:
+    When you open `config.json.cott.age` (via `vim`, `:edit`, `:split`, etc.),
+    cottage.vim runs `ctg decrypt config.json.cott.age`, loads the decrypted
+    content into a buffer named `config.json`, and detects its filetype.
+
+Saving changes:
+    When you save the decrypted buffer (`:w`), cottage.vim runs
+    `ctg encrypt config.json` to keep the `.cott.age` ciphertext updated
+    while allowing you to keep editing.
+
+Closing or Exiting:
+    When you close the buffer (`:bd`, `:bw`, `:q`), or exit Vim (`:qa`),
+    cottage.vim runs `ctg encrypt config.json --clean`, deleting the plaintext
+    file from disk so secrets are never left unencrypted.
+
+==============================================================================
+4. COMMANDS                                                   *cottage-commands*
+
+:CottageEncrypt [file]                                        *:CottageEncrypt*
+    Encrypts the specified file (or the current buffer's file if omitted)
+    with `ctg encrypt <file> --clean`. If `.cottage` has not yet been
+    initialized in the workspace, it initializes it automatically.
+
+:CottageDecrypt [file]                                        *:CottageDecrypt*
+    Decrypts the specified `*.cott.age` file and opens it in the current
+    window.
+
+:CottageInstall                                                *:CottageInstall*
+    Detects the best available package registry on your system (cargo, uv,
+    pipx, python3, pnpm, yarn, npm) and installs the `ctg` binary.
+
+:CottageInit [dir]                                                *:CottageInit*
+    Initializes a new cottage repository in the workspace or given directory
+    via `ctg init`.
+
+:CottageClean                                                    *:CottageClean*
+    Cleans all decrypted secret files and temporary identity files via
+    `ctg clean -qqq`.
+
+:CottageStatus                                                  *:CottageStatus*
+    Displays the current cottage status in a scratch buffer.
+
+:CottageDiff [file]                                               *:CottageDiff*
+    Displays differences between encrypted and decrypted files in a diff
+    buffer.
+
+:CottagePull                                                      *:CottagePull*
+    Pulls upstream cottage secrets.
+
+:CottagePush                                                      *:CottagePush*
+    Pushes cottage secrets to upstream.
+
+==============================================================================
+5. CONFIGURATION                                         *cottage-configuration*
+
+Customize cottage.vim behavior by setting options in your `~/.vimrc` or `init.lua`:
+
+g:cottage_enabled                                            *g:cottage_enabled*
+    Enable or disable the plugin.
+    Default: `1`
+
+g:cottage_auto_install                                  *g:cottage_auto_install*
+    Automatically install `ctg` if not found when opening a `.cott.age` file.
+    Default: `1`
+
+g:cottage_bin                                                    *g:cottage_bin*
+    Custom path to the `ctg` binary. If empty, the plugin auto-detects it on
+    `$PATH` or standard package paths (`~/.cargo/bin`, `~/.local/bin`, etc.).
+    Default: `""`
+
+g:cottage_sync_on_save                                *g:cottage_sync_on_save*
+    Automatically run `ctg encrypt <file>` when saving a decrypted buffer.
+    Default: `1`
+
+g:cottage_clean_on_close                            *g:cottage_clean_on_close*
+    Automatically run `ctg encrypt <file> --clean` when closing/unloading a
+    decrypted buffer.
+    Default: `1`
+
+g:cottage_clean_on_exit                              *g:cottage_clean_on_exit*
+    Ensure all decrypted files are encrypted with `--clean` when Vim exits.
+    Default: `1`
+
+g:cottage_clean_on_leave                            *g:cottage_clean_on_leave*
+    Clean the decrypted file whenever switching focus away from its buffer.
+    Default: `0`
+
+g:cottage_auto_init                                      *g:cottage_auto_init*
+    Automatically run `ctg init` when encrypting a file in a workspace without
+    `.cottage`.
+    Default: `1`
+
+g:cottage_disable_swapfile                        *g:cottage_disable_swapfile*
+    Disable swapfiles (`noswapfile`) for decrypted buffers.
+    Default: `1`
+
+g:cottage_disable_backup                            *g:cottage_disable_backup*
+    Disable backups (`nobackup nowritebackup`) for decrypted buffers.
+    Default: `1`
+
+g:cottage_quiet                                                *g:cottage_quiet*
+    Suppress informational messages.
+    Default: `0`
+
+==============================================================================
+6. HEALTH CHECK                                                 *cottage-health*
+
+In Neovim, run `:checkhealth cottage` to verify your installation, `ctg` binary
+availability, detected package managers, and configuration.
+
+==============================================================================
+7. LICENSE                                                       *cottage-license*
+
+MIT License. Copyright (c) sayanarijit.
+
+vim:tw=78:ts=8:ft=help:norl:

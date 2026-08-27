@@ -1,0 +1,6 @@
+*.swp
+*.swo
+*~
+.netrwhist
+tags
+/scratch/
