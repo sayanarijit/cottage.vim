@@ -3,6 +3,7 @@
 Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](https://github.com/sayanarijit/cottage).
 
 `cottage.vim` manages `.cott.age` files transparently:
+
 - **Auto-decrypts** `.cott.age` files into their plaintext form when opened for editing.
 - **Auto-detects / downloads** `ctg` using the best available package manager if missing.
 - **Syncs on save** (`:w`): re-encrypts the ciphertext sibling while you continue editing.
@@ -12,6 +13,18 @@ Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](ht
 ---
 
 ## Installation
+
+### vim pack (nvim native)
+
+```bash
+git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/cottage.vim
+```
+
+```lua
+vim.pack.add({
+    'https://github.com/sayanarijit/cottage.vim'
+})
+```
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) (Neovim)
 
@@ -65,17 +78,17 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 ## Commands
 
-| Command | Description |
-| :--- | :--- |
+| Command                  | Description                                                                                                                                                         |
+| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) with `ctg encrypt <file> --clean` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. |
-| `:CottageDecrypt [file]` | Decrypts the specified `.cott.age` file and opens it. |
-| `:CottageInstall` | Detects the best available package registry and installs `ctg`. |
-| `:CottageInit [dir]` | Initializes cottage (`ctg init`) in the workspace or specified directory. |
-| `:CottageClean` | Deletes all decrypted secret files in the workspace via `ctg clean -qqq`. |
-| `:CottageStatus` | Displays `ctg status` output in a preview window. |
-| `:CottageDiff [file]` | Displays `ctg diff` output in a diff buffer. |
-| `:CottagePull` | Pulls upstream cottage secrets. |
-| `:CottagePush` | Pushes cottage secrets upstream. |
+| `:CottageDecrypt [file]` | Decrypts the specified `.cott.age` file and opens it.                                                                                                               |
+| `:CottageInstall`        | Detects the best available package registry and installs `ctg`.                                                                                                     |
+| `:CottageInit [dir]`     | Initializes cottage (`ctg init`) in the workspace or specified directory.                                                                                           |
+| `:CottageClean`          | Deletes all decrypted secret files in the workspace via `ctg clean -qqq`.                                                                                           |
+| `:CottageStatus`         | Displays `ctg status` output in a preview window.                                                                                                                   |
+| `:CottageDiff [file]`    | Displays `ctg diff` output in a diff buffer.                                                                                                                        |
+| `:CottagePull`           | Pulls upstream cottage secrets.                                                                                                                                     |
+| `:CottagePush`           | Pushes cottage secrets upstream.                                                                                                                                    |
 
 ---
 
@@ -140,6 +153,7 @@ vim.g.cottage_disable_backup = 1
 ## Health Check (Neovim)
 
 Run `:checkhealth cottage` in Neovim to verify your environment:
+
 - Verifies `ctg` binary detection and version.
 - Lists detected package managers.
 - Checks workspace cottage initialization status.
@@ -150,6 +164,7 @@ Run `:checkhealth cottage` in Neovim to verify your environment:
 ## Safety Model
 
 `cottage.vim` enforces secret safety in your editor:
+
 - **No Swapfile Leaks**: `noswapfile` prevents secret plaintext from being written into `.swp` swap files.
 - **No Backup Leaks**: `nobackup` and `nowritebackup` prevent secret plaintext backups on disk.
 - **Guaranteed Cleanup**: `VimLeavePre` and `BufUnload` hooks ensure all tracked plaintext secret files are cleanly encrypted and erased from disk.
