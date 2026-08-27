@@ -177,11 +177,33 @@ function! RunAllTests() abort
     call Assert(filereadable(l:test_dir . '/app.env'), 'app.env still on disk')
     close!
     call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned when hidden after window closed')
+    " Test 14: Multiple files open on exit (do not encrypt untracked files)
+    echomsg '--- Test 14: Multiple files open on exit ---'
+    call writefile(['UNTOUCHED_NORMAL_CONTENT'], l:test_dir . '/plain.txt')
+    edit plain.txt
+    vsplit app.env.cott.age
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
+    call Assert(filereadable(l:test_dir . '/plain.txt'), 'plain.txt exists on disk')
+    call cottage#on_vim_leave()
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned on exit')
+    call Assert(filereadable(l:test_dir . '/plain.txt'), 'plain.txt still exists on disk')
+    call Assert(!filereadable(l:test_dir . '/plain.txt.cott.age'), 'plain.txt was NOT encrypted')
     bwipeout! app.env
-    bwipeout! other.txt
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env remains cleaned after wipeout')
+    bwipeout! plain.txt
 
-  finally
+    " Test 15: BufUnload sequence during exit does not leak tracking to untracked buffers
+    echomsg '--- Test 15: BufUnload sequence with untracked buffers ---'
+    call writefile(['OTHER_NORMAL_CONTENT'], l:test_dir . '/other2.txt')
+    edit other2.txt
+    edit app.env.cott.age
+    " While app.env is the active buffer, trigger unload on other2.txt
+    let l:other_bnr = bufnr(l:test_dir . '/other2.txt')
+    if l:other_bnr > 0
+      execute 'bwipeout ' . l:other_bnr
+    endif
+    call Assert(filereadable(l:test_dir . '/other2.txt'), 'other2.txt exists after wipeout')
+    call Assert(!filereadable(l:test_dir . '/other2.txt.cott.age'), 'other2.txt was NOT encrypted upon unload')
+    bwipeout! app.env
     execute 'cd ' . fnameescape(l:orig_cwd)
     call delete(l:test_dir, 'rf')
   endtry
