@@ -96,23 +96,40 @@ function! RunAllTests() abort
     call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'Re-decrypted content matches updated value')
     bwipeout
 
-    " Test 8: :CottageEncrypt command on a new file
+    " Test 8: :CottageEncrypt command on a file argument
     echomsg '--- Test 8: :CottageEncrypt command ---'
     call writefile(['DATABASE_URL=postgres://localhost/db'], l:test_dir . '/db.env')
     call Assert(filereadable(l:test_dir . '/db.env'), 'db.env created')
     CottageEncrypt db.env
-    call Assert(!filereadable(l:test_dir . '/db.env'), 'db.env deleted after CottageEncrypt')
     call Assert(filereadable(l:test_dir . '/db.env.cott.age'), 'db.env.cott.age created after CottageEncrypt')
+    call AssertEqual(expand('%:t'), 'db.env', 'Active buffer is db.env after CottageEncrypt')
+    call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked after CottageEncrypt')
+    call AssertEqual(getline(1), 'DATABASE_URL=postgres://localhost/db', 'Decrypted content loaded after CottageEncrypt')
+    bwipeout
+    call Assert(!filereadable(l:test_dir . '/db.env'), 'db.env cleaned after bwipeout')
 
-    " Test 9: :CottageDecrypt command
-    echomsg '--- Test 9: :CottageDecrypt command ---'
+    " Test 9: :CottageEncrypt on current buffer without args
+    echomsg '--- Test 9: :CottageEncrypt on current buffer ---'
+    call writefile(['API_KEY=secret_key_789'], l:test_dir . '/api.env')
+    edit api.env
+    call AssertEqual(expand('%:t'), 'api.env', 'api.env opened in buffer')
+    CottageEncrypt
+    call Assert(filereadable(l:test_dir . '/api.env.cott.age'), 'api.env.cott.age created after CottageEncrypt current buffer')
+    call AssertEqual(expand('%:t'), 'api.env', 'Active buffer is api.env after CottageEncrypt current buffer')
+    call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked after CottageEncrypt current buffer')
+    call AssertEqual(getline(1), 'API_KEY=secret_key_789', 'Buffer content matches after CottageEncrypt current buffer')
+    bwipeout
+    call Assert(!filereadable(l:test_dir . '/api.env'), 'api.env cleaned after bwipeout')
+
+    " Test 10: :CottageDecrypt command
+    echomsg '--- Test 10: :CottageDecrypt command ---'
     CottageDecrypt db.env.cott.age
     call AssertEqual(expand('%:t'), 'db.env', 'Buffer is db.env after CottageDecrypt')
     call AssertEqual(getline(1), 'DATABASE_URL=postgres://localhost/db', 'Decrypted content matches via command')
     bwipeout
 
-    " Test 10: Clean on exit
-    echomsg '--- Test 10: Clean on VimLeavePre ---'
+    " Test 11: Clean on exit
+    echomsg '--- Test 11: Clean on VimLeavePre ---'
     edit app.env.cott.age
     call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
     call cottage#on_vim_leave()

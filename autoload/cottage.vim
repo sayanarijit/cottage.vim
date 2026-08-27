@@ -625,6 +625,8 @@ function! cottage#cmd_encrypt(...) abort
     execute 'silent! bwipeout! ' . l:bnr
   endif
 
+  execute 'edit ' . fnameescape(l:enc_file)
+
   call cottage#msg("Encrypted " . fnamemodify(l:file, ':t') . " -> " . fnamemodify(l:enc_file, ':t'))
 endfunction
 

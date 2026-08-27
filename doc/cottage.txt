@@ -75,8 +75,9 @@ Closing or Exiting:
 
 :CottageEncrypt [file]                                        *:CottageEncrypt*
     Encrypts the specified file (or the current buffer's file if omitted)
-    with `ctg encrypt <file> --clean`. If `.cottage` has not yet been
-    initialized in the workspace, it initializes it automatically.
+    with `ctg encrypt <file> --clean` and opens the resulting `.cott.age`
+    file. If `.cottage` has not yet been initialized in the workspace, it
+    initializes it automatically.
 
 :CottageDecrypt [file]                                        *:CottageDecrypt*
     Decrypts the specified `*.cott.age` file and opens it in the current

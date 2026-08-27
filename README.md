@@ -67,7 +67,7 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 | Command | Description |
 | :--- | :--- |
-| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) with `ctg encrypt <file> --clean`. Auto-initializes `.cottage` if missing. |
+| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) with `ctg encrypt <file> --clean` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. |
 | `:CottageDecrypt [file]` | Decrypts the specified `.cott.age` file and opens it. |
 | `:CottageInstall` | Detects the best available package registry and installs `ctg`. |
 | `:CottageInit [dir]` | Initializes cottage (`ctg init`) in the workspace or specified directory. |
