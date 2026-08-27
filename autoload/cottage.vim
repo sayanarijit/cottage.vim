@@ -379,7 +379,7 @@ function! cottage#on_buf_read_cmd() abort
     let l:file_dir = fnamemodify(l:enc_path, ':h')
 
     " Check if decrypted buffer is already open
-    let l:existing_buf = bufnr(fnameescape(l:dec_path))
+    let l:existing_buf = bufnr(l:dec_path)
     if l:existing_buf != -1 && l:existing_buf != l:enc_buf && bufloaded(l:existing_buf)
       execute 'buffer ' . l:existing_buf
       if l:enc_buf != bufnr('%') && bufexists(l:enc_buf)
@@ -423,10 +423,15 @@ function! cottage#on_buf_write_post() abort
     return
   endif
 
-  let l:file = fnamemodify(expand('<afile>'), ':p')
-  let l:norm = s:normalize_path(l:file)
+  let l:bnr = str2nr(expand('<abuf>'))
+  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
+  if empty(l:file)
+    return
+  endif
 
-  if !has_key(s:tracked_files, l:norm) && !get(b:, 'cottage_tracked', 0)
+  let l:norm = s:normalize_path(l:file)
+  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
+  if !l:is_tracked
     return
   endif
 
@@ -448,6 +453,15 @@ function! cottage#on_buf_write_post() abort
     elseif !get(g:, 'cottage_quiet', 0)
       call cottage#msg("Synced encryption for " . fnamemodify(l:file, ':t'))
     endif
+
+    if !has_key(s:tracked_files, l:norm)
+      let l:enc_path = l:bnr > 0 ? getbufvar(l:bnr, 'cottage_encrypted_path', s:get_encrypted_path(l:file)) : s:get_encrypted_path(l:file)
+      let s:tracked_files[l:norm] = {
+            \ 'decrypted_path': l:file,
+            \ 'encrypted_path': l:enc_path,
+            \ 'bufnr': l:bnr > 0 ? l:bnr : bufnr('%')
+            \ }
+    endif
   finally
     unlet! s:in_flight[l:norm]
   endtry
@@ -461,8 +475,13 @@ function! s:finalize_tracked_file(file, bufnr_val) abort
   let s:in_flight[l:norm] = 1
 
   try
+    let l:bnr = str2nr(a:bufnr_val)
+
     if !filereadable(a:file)
       unlet! s:tracked_files[l:norm]
+      if l:bnr > 0 && bufexists(l:bnr)
+        call setbufvar(l:bnr, '&buftype', 'nofile')
+      endif
       return
     endif
 
@@ -471,9 +490,16 @@ function! s:finalize_tracked_file(file, bufnr_val) abort
       return
     endif
 
-    let l:bnr = str2nr(a:bufnr_val)
     if l:bnr > 0 && bufexists(l:bnr) && getbufvar(l:bnr, '&modified')
-      execute 'noautocmd silent! ' . l:bnr . 'bufdo! write'
+      if l:bnr == bufnr('%')
+        noautocmd silent! write
+      else
+        let l:cur_buf = bufnr('%')
+        execute 'noautocmd silent! ' . l:bnr . 'bufdo! write'
+        if bufnr('%') != l:cur_buf && bufexists(l:cur_buf)
+          execute 'noautocmd silent! buffer ' . l:cur_buf
+        endif
+      endif
     endif
 
     let l:file_dir = fnamemodify(a:file, ':h')
@@ -485,9 +511,37 @@ function! s:finalize_tracked_file(file, bufnr_val) abort
     endif
 
     unlet! s:tracked_files[l:norm]
+
+    if l:bnr > 0 && bufexists(l:bnr)
+      call setbufvar(l:bnr, '&buftype', 'nofile')
+    endif
   finally
     unlet! s:in_flight[l:norm]
   endtry
+endfunction
+
+function! cottage#on_buf_hidden() abort
+  if !get(g:, 'cottage_enabled', 1)
+    return
+  endif
+
+  if !get(g:, 'cottage_clean_on_close', 1) && !get(g:, 'cottage_clean_on_leave', 1)
+    return
+  endif
+
+  let l:bnr = str2nr(expand('<abuf>'))
+  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
+  if empty(l:file)
+    return
+  endif
+
+  let l:norm = s:normalize_path(l:file)
+  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
+  if !l:is_tracked
+    return
+  endif
+
+  call s:finalize_tracked_file(l:file, l:bnr)
 endfunction
 
 function! cottage#on_buf_unload() abort
@@ -495,14 +549,66 @@ function! cottage#on_buf_unload() abort
     return
   endif
 
-  let l:file = fnamemodify(expand('<afile>'), ':p')
-  let l:norm = s:normalize_path(l:file)
-
-  if !has_key(s:tracked_files, l:norm) && !get(b:, 'cottage_tracked', 0)
+  let l:bnr = str2nr(expand('<abuf>'))
+  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
+  if empty(l:file)
     return
   endif
 
-  call s:finalize_tracked_file(l:file, expand('<abuf>'))
+  let l:norm = s:normalize_path(l:file)
+  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
+  if !l:is_tracked
+    return
+  endif
+
+  call s:finalize_tracked_file(l:file, l:bnr)
+endfunction
+
+function! cottage#on_buf_enter() abort
+  if !get(g:, 'cottage_enabled', 1)
+    return
+  endif
+
+  let l:bnr = bufnr('%')
+  if !getbufvar(l:bnr, 'cottage_tracked', 0)
+    return
+  endif
+
+  let l:dec_path = getbufvar(l:bnr, 'cottage_decrypted_path', '')
+  let l:enc_path = getbufvar(l:bnr, 'cottage_encrypted_path', '')
+  if empty(l:dec_path) || empty(l:enc_path)
+    return
+  endif
+
+  let l:norm_dec = s:normalize_path(l:dec_path)
+  if has_key(s:in_flight, l:norm_dec)
+    return
+  endif
+
+  if !has_key(s:tracked_files, l:norm_dec)
+    let s:tracked_files[l:norm_dec] = {
+          \ 'decrypted_path': l:dec_path,
+          \ 'encrypted_path': l:enc_path,
+          \ 'bufnr': l:bnr
+          \ }
+  endif
+
+  " If the decrypted file is missing on disk (e.g. cleaned when buffer became hidden), restore it
+  if !filereadable(l:dec_path) && filereadable(l:enc_path)
+    let l:ctg_bin = cottage#find_ctg()
+    if !empty(l:ctg_bin)
+      let l:file_dir = fnamemodify(l:enc_path, ':h')
+      let s:in_flight[l:norm_dec] = 1
+      try
+        let l:res = s:run_command(shellescape(l:ctg_bin) . ' decrypt ' . shellescape(l:enc_path), l:file_dir)
+      finally
+        unlet! s:in_flight[l:norm_dec]
+      endtry
+    endif
+  endif
+
+  setlocal buftype=
+  setlocal nomodified
 endfunction
 
 function! cottage#on_buf_leave() abort
@@ -510,22 +616,26 @@ function! cottage#on_buf_leave() abort
     return
   endif
 
-  let l:file = fnamemodify(expand('<afile>'), ':p')
-  let l:norm = s:normalize_path(l:file)
-
-  if !has_key(s:tracked_files, l:norm) && !get(b:, 'cottage_tracked', 0)
+  let l:bnr = str2nr(expand('<abuf>'))
+  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
+  if empty(l:file)
     return
   endif
 
-  let l:bnr = bufnr(fnameescape(l:file))
-  if l:bnr != -1 && exists('*win_findbuf')
+  let l:norm = s:normalize_path(l:file)
+  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
+  if !l:is_tracked
+    return
+  endif
+
+  if l:bnr > 0 && exists('*win_findbuf')
     let l:wins = win_findbuf(l:bnr)
     if len(l:wins) > 1
       return
     endif
   endif
 
-  call s:finalize_tracked_file(l:file, expand('<abuf>'))
+  call s:finalize_tracked_file(l:file, l:bnr)
 endfunction
 
 function! cottage#on_vim_leave() abort
@@ -549,6 +659,19 @@ function! cottage#on_vim_leave() abort
     endif
     let l:file_dir = fnamemodify(l:file, ':h')
     call s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file) . ' --clean', l:file_dir)
+  endfor
+
+  for l:b in range(1, bufnr('$'))
+    if bufexists(l:b) && getbufvar(l:b, 'cottage_tracked', 0)
+      let l:file = getbufvar(l:b, 'cottage_decrypted_path', '')
+      if !empty(l:file) && filereadable(l:file)
+        if getbufvar(l:b, '&modified')
+          execute 'noautocmd silent! ' . l:b . 'bufdo! write'
+        endif
+        let l:file_dir = fnamemodify(l:file, ':h')
+        call s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file) . ' --clean', l:file_dir)
+      endif
+    endif
   endfor
 
   let s:tracked_files = {}

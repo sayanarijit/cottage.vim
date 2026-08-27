@@ -136,6 +136,51 @@ function! RunAllTests() abort
     call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned on vim leave')
     bwipeout!
 
+    " Test 12: Buffer switching with hidden enabled (clean on hide, restore on enter)
+    echomsg '--- Test 12: Buffer switching (BufHidden / BufEnter) ---'
+    set hidden
+    call writefile(['OTHER_CONTENT'], l:test_dir . '/other.txt')
+    edit app.env.cott.age
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
+    call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'app.env has expected secret')
+
+    " Switch away to other.txt
+    edit other.txt
+    call AssertEqual(expand('%:t'), 'other.txt', 'Active buffer changed to other.txt')
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned from disk when hidden')
+
+    " Switch back to app.env
+    b app.env
+    call AssertEqual(expand('%:t'), 'app.env', 'Active buffer changed back to app.env')
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env restored on disk upon buffer re-entry')
+    call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'app.env content preserved')
+
+    " Edit, save, and switch away again
+    call setline(1, 'MY_SECRET=final_secret_999')
+    write
+    b other.txt
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned after modified buffer hidden')
+
+    " Clean up hidden buffer
+    bwipeout! app.env
+    bwipeout! other.txt
+
+    " Test 13: Split windows (do not clean while buffer is visible in another window)
+    echomsg '--- Test 13: Split windows ---'
+    edit app.env.cott.age
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
+    vsplit other.txt
+    call AssertEqual(expand('%:t'), 'other.txt', 'New split window is other.txt')
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env remains on disk while still visible in window 1')
+    wincmd p
+    call AssertEqual(expand('%:t'), 'app.env', 'Focused window 1 (app.env)')
+    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env still on disk')
+    close!
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned when hidden after window closed')
+    bwipeout! app.env
+    bwipeout! other.txt
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env remains cleaned after wipeout')
+
   finally
     execute 'cd ' . fnameescape(l:orig_cwd)
     call delete(l:test_dir, 'rf')
