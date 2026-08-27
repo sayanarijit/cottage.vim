@@ -141,7 +141,7 @@ g:cottage_clean_on_exit                              *g:cottage_clean_on_exit*
 
 g:cottage_clean_on_leave                            *g:cottage_clean_on_leave*
     Clean the decrypted file whenever switching focus away from its buffer.
-    Default: `0`
+    Default: `1`
 
 g:cottage_auto_init                                      *g:cottage_auto_init*
     Automatically run `ctg init` when encrypting a file in a workspace without

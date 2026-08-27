@@ -22,7 +22,7 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 ```lua
 vim.pack.add({
-    'https://github.com/sayanarijit/cottage.vim'
+  'https://github.com/sayanarijit/cottage.vim'
 })
 ```
 
@@ -117,8 +117,8 @@ let g:cottage_clean_on_close = 1
 " Encrypt and delete plaintext when exiting Vim (default: 1)
 let g:cottage_clean_on_exit = 1
 
-" Encrypt and delete plaintext on buffer leave / focus switch (default: 0)
-let g:cottage_clean_on_leave = 0
+" Encrypt and delete plaintext on buffer leave / focus switch (default: 1)
+let g:cottage_clean_on_leave = 1
 
 " Auto-run ctg init if needed during :CottageEncrypt (default: 1)
 let g:cottage_auto_init = 1

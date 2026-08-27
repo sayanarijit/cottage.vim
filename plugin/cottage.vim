@@ -38,7 +38,7 @@ if !exists('g:cottage_clean_on_exit')
 endif
 
 if !exists('g:cottage_clean_on_leave')
-  let g:cottage_clean_on_leave = 0
+  let g:cottage_clean_on_leave = 1
 endif
 
 if !exists('g:cottage_auto_init')

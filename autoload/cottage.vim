@@ -506,7 +506,7 @@ function! cottage#on_buf_unload() abort
 endfunction
 
 function! cottage#on_buf_leave() abort
-  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_clean_on_leave', 0)
+  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_clean_on_leave', 1)
     return
   endif
 
