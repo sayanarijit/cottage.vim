@@ -204,6 +204,42 @@ function! RunAllTests() abort
     call Assert(filereadable(l:test_dir . '/other2.txt'), 'other2.txt exists after wipeout')
     call Assert(!filereadable(l:test_dir . '/other2.txt.cott.age'), 'other2.txt was NOT encrypted upon unload')
     bwipeout! app.env
+
+    " Test 16: Reopening decrypted file after bdelete is not blank
+    echomsg '--- Test 16: Reopen decrypted file after bdelete ---'
+    call writefile(['REGRESSION_SECRET_KEY=999'], l:test_dir . '/reopen.env')
+    call system('ctg encrypt reopen.env --clean')
+    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env cleaned on disk')
+    call Assert(filereadable(l:test_dir . '/reopen.env.cott.age'), 'reopen.env.cott.age exists on disk')
+    edit reopen.env.cott.age
+    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Initial open has secret')
+    bdelete
+    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env cleaned on disk after bdelete')
+    " Reopen decrypted file directly
+    edit reopen.env
+    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Reopening decrypted file after bdelete is NOT blank')
+    call Assert(filereadable(l:test_dir . '/reopen.env'), 'reopen.env restored on disk')
+
+    " Test 17: Reopening encrypted file after reopening decrypted file is not blank
+    echomsg '--- Test 17: Reopen encrypted file after reopening decrypted file ---'
+    edit reopen.env.cott.age
+    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Reopening encrypted file is NOT blank')
+    bwipeout! reopen.env
+
+    " Test 18: Open decrypted path directly when file does not exist on disk
+    echomsg '--- Test 18: Open decrypted path directly ---'
+    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env not on disk')
+    edit reopen.env
+    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Opening decrypted path directly decrypts content')
+    call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked when opened directly')
+    bwipeout! reopen.env
+
+    " Test 19: :CottageDecrypt with decrypted filename argument
+    echomsg '--- Test 19: CottageDecrypt with decrypted filename ---'
+    CottageDecrypt reopen.env
+    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'CottageDecrypt reopen.env decrypts and opens content')
+    bwipeout! reopen.env
+
     execute 'cd ' . fnameescape(l:orig_cwd)
     call delete(l:test_dir, 'rf')
   endtry

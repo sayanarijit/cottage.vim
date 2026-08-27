@@ -80,10 +80,10 @@ command! -nargs=0 CottagePush call cottage#cmd_push()
 augroup cottage
   autocmd!
   autocmd BufReadCmd *.cott.age call cottage#on_buf_read_cmd()
+  autocmd BufNewFile,BufReadPost,BufEnter,BufWinEnter * call cottage#on_buf_enter()
   autocmd BufWritePost * call cottage#on_buf_write_post()
   autocmd BufUnload * call cottage#on_buf_unload()
   autocmd BufHidden * call cottage#on_buf_hidden()
-  autocmd BufEnter,BufWinEnter * call cottage#on_buf_enter()
   autocmd BufLeave * call cottage#on_buf_leave()
   autocmd VimLeavePre * call cottage#on_vim_leave()
 augroup END
