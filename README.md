@@ -16,13 +16,9 @@ Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](ht
 
 ### vim pack (nvim native)
 
-```bash
-git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/cottage.vim
-```
-
 ```lua
 vim.pack.add({
-  'https://github.com/sayanarijit/cottage.vim'
+  'https://github.com/sayanarijit/cottage.vim',
 })
 ```
 
