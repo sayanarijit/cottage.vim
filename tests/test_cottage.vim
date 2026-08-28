@@ -75,6 +75,10 @@ function! RunAllTests() abort
     call AssertEqual(expand('%:t'), 'app.env', 'Active buffer changed to app.env')
     call AssertEqual(getline(1), 'MY_SECRET=supersecret123', 'Decrypted content matches original secret')
     call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is marked as cottage_tracked')
+    call Assert(!&l:swapfile, 'swapfile is disabled on decrypted buffer')
+    call Assert(!&l:backup, 'backup is disabled on decrypted buffer')
+    call Assert(!&l:writebackup, 'writebackup is disabled on decrypted buffer')
+    call Assert(!&l:undofile, 'undofile is disabled by default on decrypted buffer')
     call Assert(filereadable(l:test_dir . '/app.env'), 'Plaintext app.env exists on disk while open')
 
     " Test 5: Edit and save (sync on save)

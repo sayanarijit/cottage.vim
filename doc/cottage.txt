@@ -29,8 +29,8 @@ Key Features:
 - Syncs/encrypts changes to the `.cott.age` file on `:write`.
 - Auto-encrypts and cleans (removes) the plaintext file on buffer close (`:bd`,
   `:bw`, `:q`) or editor exit (`VimLeavePre`).
-- Safe by default: disables swapfiles and backup files on secret buffers to
-  prevent plaintext leakage.
+- Safe by default: disables swapfiles, backup files, and undofiles on secret
+  buffers to prevent plaintext leakage.
 
 ==============================================================================
 2. INSTALLATION                                           *cottage-installation*
@@ -154,6 +154,10 @@ g:cottage_disable_swapfile                        *g:cottage_disable_swapfile*
 
 g:cottage_disable_backup                            *g:cottage_disable_backup*
     Disable backups (`nobackup nowritebackup`) for decrypted buffers.
+    Default: `1`
+
+g:cottage_disable_undofile                        *g:cottage_disable_undofile*
+    Disable persistent undofiles (`noundofile`) for decrypted buffers.
     Default: `1`
 
 g:cottage_quiet                                                *g:cottage_quiet*

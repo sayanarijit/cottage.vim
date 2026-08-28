@@ -54,7 +54,7 @@ if !exists('g:cottage_disable_backup')
 endif
 
 if !exists('g:cottage_disable_undofile')
-  let g:cottage_disable_undofile = 0
+  let g:cottage_disable_undofile = 1
 endif
 
 if !exists('g:cottage_quiet')

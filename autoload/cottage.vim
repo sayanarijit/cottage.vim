@@ -336,7 +336,7 @@ function! s:setup_decrypted_buffer(dec_path, enc_path) abort
     setlocal nowritebackup
   endif
 
-  if get(g:, 'cottage_disable_undofile', 0)
+  if get(g:, 'cottage_disable_undofile', 1)
     setlocal noundofile
   endif
 

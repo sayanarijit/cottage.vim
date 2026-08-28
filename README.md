@@ -8,7 +8,7 @@ Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](ht
 - **Auto-detects / downloads** `ctg` using the best available package manager if missing.
 - **Syncs on save** (`:w`): re-encrypts the ciphertext sibling while you continue editing.
 - **Auto-encrypts and cleans on close**: when closing the buffer (`:bd`, `:bw`, `:q`) or exiting Vim (`:qa`), re-encrypts and deletes the plaintext secret file from disk.
-- **Safe by default**: automatically disables swapfiles and backup files on decrypted buffers to prevent secrets from leaking into disk caches.
+- **Safe by default**: automatically disables swapfiles, backup files, and persistent undofiles on decrypted buffers to prevent secrets from leaking into disk caches.
 
 ---
 
@@ -129,8 +129,8 @@ let g:cottage_disable_swapfile = 1
 " Disable backup files on decrypted buffers (default: 1)
 let g:cottage_disable_backup = 1
 
-" Disable persistent undofile on decrypted buffers (default: 0)
-let g:cottage_disable_undofile = 0
+" Disable persistent undofile on decrypted buffers (default: 1)
+let g:cottage_disable_undofile = 1
 
 " Suppress informational echo messages (default: 0)
 let g:cottage_quiet = 0
@@ -146,6 +146,7 @@ vim.g.cottage_clean_on_close = 1
 vim.g.cottage_clean_on_exit = 1
 vim.g.cottage_disable_swapfile = 1
 vim.g.cottage_disable_backup = 1
+vim.g.cottage_disable_undofile = 1
 ```
 
 ---
@@ -167,6 +168,7 @@ Run `:checkhealth cottage` in Neovim to verify your environment:
 
 - **No Swapfile Leaks**: `noswapfile` prevents secret plaintext from being written into `.swp` swap files.
 - **No Backup Leaks**: `nobackup` and `nowritebackup` prevent secret plaintext backups on disk.
+- **No Undofile Leaks**: `noundofile` prevents persistent undo history containing plaintext secrets from being written to disk.
 - **Guaranteed Cleanup**: `VimLeavePre` and `BufUnload` hooks ensure all tracked plaintext secret files are cleanly encrypted and erased from disk.
 
 ---
