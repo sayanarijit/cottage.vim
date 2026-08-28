@@ -34,14 +34,30 @@ M.check = function()
   end
 
   -- Check settings
-  local enabled = vim.g.cottage_enabled ~= 0
-  local auto_install = vim.g.cottage_auto_install ~= 0
-  local sync_save = vim.g.cottage_sync_on_save ~= 0
-  local clean_close = vim.g.cottage_clean_on_close ~= 0
-  local clean_exit = vim.g.cottage_clean_on_exit ~= 0
+  local get_setting = function(var, default)
+    local val = vim.g[var]
+    if val ~= nil then
+      return val ~= 0
+    end
+    return default
+  end
 
-  health.ok(string.format("Configuration: enabled=%s, auto_install=%s, sync_on_save=%s, clean_on_close=%s, clean_on_exit=%s",
-    tostring(enabled), tostring(auto_install), tostring(sync_save), tostring(clean_close), tostring(clean_exit)))
+  local enabled = get_setting("cottage_enabled", true)
+  local auto_install = get_setting("cottage_auto_install", true)
+  local sync_save = get_setting("cottage_sync_on_save", true)
+  local clean_close = get_setting("cottage_clean_on_close", true)
+  local clean_exit = get_setting("cottage_clean_on_exit", true)
+  local clean_leave = get_setting("cottage_clean_on_leave", true)
+  local disable_swapfile = get_setting("cottage_disable_swapfile", true)
+  local disable_backup = get_setting("cottage_disable_backup", true)
+  local disable_undofile = get_setting("cottage_disable_undofile", true)
+
+  health.ok(string.format(
+    "Configuration: enabled=%s, auto_install=%s, sync_on_save=%s, clean_on_close=%s, clean_on_exit=%s, clean_on_leave=%s, disable_swapfile=%s, disable_backup=%s, disable_undofile=%s",
+    tostring(enabled), tostring(auto_install), tostring(sync_save), tostring(clean_close),
+    tostring(clean_exit), tostring(clean_leave), tostring(disable_swapfile), tostring(disable_backup),
+    tostring(disable_undofile)
+  ))
 end
 
 return M
