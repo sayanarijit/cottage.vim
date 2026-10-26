@@ -25,22 +25,6 @@ if !exists('g:cottage_bin')
   let g:cottage_bin = ''
 endif
 
-if !exists('g:cottage_sync_on_save')
-  let g:cottage_sync_on_save = 1
-endif
-
-if !exists('g:cottage_clean_on_close')
-  let g:cottage_clean_on_close = 1
-endif
-
-if !exists('g:cottage_clean_on_exit')
-  let g:cottage_clean_on_exit = 1
-endif
-
-if !exists('g:cottage_clean_on_leave')
-  let g:cottage_clean_on_leave = 1
-endif
-
 if !exists('g:cottage_auto_init')
   let g:cottage_auto_init = 1
 endif
@@ -65,14 +49,6 @@ endif
 " User Commands
 " ----------------------------------------------------------------------------
 command! -nargs=? -complete=file CottageEncrypt call cottage#cmd_encrypt(<f-args>)
-command! -nargs=? -complete=customlist,cottage#complete_encrypted CottageDecrypt call cottage#cmd_decrypt(<f-args>)
-command! -nargs=0 CottageInstall call cottage#cmd_install()
-command! -nargs=? -complete=dir CottageInit call cottage#cmd_init(<f-args>)
-command! -nargs=0 CottageClean call cottage#cmd_clean()
-command! -nargs=0 CottageStatus call cottage#cmd_status()
-command! -nargs=? -complete=file CottageDiff call cottage#cmd_diff(<f-args>)
-command! -nargs=0 CottagePull call cottage#cmd_pull()
-command! -nargs=0 CottagePush call cottage#cmd_push()
 
 " ----------------------------------------------------------------------------
 " Autocommands
@@ -80,10 +56,5 @@ command! -nargs=0 CottagePush call cottage#cmd_push()
 augroup cottage
   autocmd!
   autocmd BufReadCmd *.cott.age call cottage#on_buf_read_cmd()
-  autocmd BufNewFile,BufReadPost,BufEnter,BufWinEnter * call cottage#on_buf_enter()
-  autocmd BufWritePost * call cottage#on_buf_write_post()
-  autocmd BufUnload * call cottage#on_buf_unload()
-  autocmd BufHidden * call cottage#on_buf_hidden()
-  autocmd BufLeave * call cottage#on_buf_leave()
-  autocmd VimLeavePre * call cottage#on_vim_leave()
+  autocmd BufNewFile * call cottage#on_buf_new_file()
 augroup END

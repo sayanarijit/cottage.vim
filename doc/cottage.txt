@@ -26,9 +26,8 @@ Key Features:
 - Auto-detects or downloads/installs the `ctg` binary automatically.
 - Transparently decrypts `*.cott.age` files on open into plaintext buffers.
 - Keeps syntax highlighting, filetype detection, and linters working seamlessly.
-- Syncs/encrypts changes to the `.cott.age` file on `:write`.
-- Auto-encrypts and cleans (removes) the plaintext file on buffer close (`:bd`,
-  `:bw`, `:q`) or editor exit (`VimLeavePre`).
+- Encrypts changes straight from the buffer to the `.cott.age` file on `:write`.
+- Plaintext is never written to disk; it lives only in the buffer.
 - Safe by default: disables swapfiles, backup files, and undofiles on secret
   buffers to prevent plaintext leakage.
 
@@ -57,56 +56,26 @@ Native package (Vim 8+ / Neovim): >bash
 
 Opening `.cott.age` files:
     When you open `config.json.cott.age` (via `vim`, `:edit`, `:split`, etc.),
-    cottage.vim runs `ctg decrypt config.json.cott.age`, loads the decrypted
-    content into a buffer named `config.json`, and detects its filetype.
+    cottage.vim runs `ctg cat -- config.json.cott.age`, loads the output into
+    an in-memory buffer named `config.json`, and detects its filetype.
 
 Saving changes:
-    When you save the decrypted buffer (`:w`), cottage.vim runs
-    `ctg encrypt config.json` to keep the `.cott.age` ciphertext updated
-    while allowing you to keep editing.
+    When you save the buffer (`:w`), cottage.vim passes its content to the
+    stdin of `ctg cat config.json.cott.age`, which updates the ciphertext.
+    Writing to any other path is refused.
 
 Closing or Exiting:
-    When you close the buffer (`:bd`, `:bw`, `:q`), or exit Vim (`:qa`),
-    cottage.vim runs `ctg encrypt config.json --clean`, deleting the plaintext
-    file from disk so secrets are never left unencrypted.
+    The in-memory plaintext is simply discarded. No decrypted file ever exists
+    on disk, so there is nothing to clean up.
 
 ==============================================================================
 4. COMMANDS                                                   *cottage-commands*
 
 :CottageEncrypt [file]                                        *:CottageEncrypt*
     Encrypts the specified file (or the current buffer's file if omitted)
-    with `ctg encrypt <file> --clean` and opens the resulting `.cott.age`
-    file. If `.cottage` has not yet been initialized in the workspace, it
-    initializes it automatically.
-
-:CottageDecrypt [file]                                        *:CottageDecrypt*
-    Decrypts the specified `*.cott.age` file and opens it in the current
-    window.
-
-:CottageInstall                                                *:CottageInstall*
-    Detects the best available package registry on your system (cargo, uv,
-    pipx, python3, pnpm, yarn, npm) and installs the `ctg` binary.
-
-:CottageInit [dir]                                                *:CottageInit*
-    Initializes a new cottage repository in the workspace or given directory
-    via `ctg init`.
-
-:CottageClean                                                    *:CottageClean*
-    Cleans all decrypted secret files and temporary identity files via
-    `ctg clean -qqq`.
-
-:CottageStatus                                                  *:CottageStatus*
-    Displays the current cottage status in a scratch buffer.
-
-:CottageDiff [file]                                               *:CottageDiff*
-    Displays differences between encrypted and decrypted files in a diff
-    buffer.
-
-:CottagePull                                                      *:CottagePull*
-    Pulls upstream cottage secrets.
-
-:CottagePush                                                      *:CottagePush*
-    Pushes cottage secrets to upstream.
+    in memory via `ctg cat` (stdin) and opens the resulting `.cott.age`
+    file. The original plaintext file is not deleted. If `.cottage` has not
+    yet been initialized in the workspace, it initializes it automatically.
 
 ==============================================================================
 5. CONFIGURATION                                         *cottage-configuration*
@@ -125,23 +94,6 @@ g:cottage_bin                                                    *g:cottage_bin*
     Custom path to the `ctg` binary. If empty, the plugin auto-detects it on
     `$PATH` or standard package paths (`~/.cargo/bin`, `~/.local/bin`, etc.).
     Default: `""`
-
-g:cottage_sync_on_save                                *g:cottage_sync_on_save*
-    Automatically run `ctg encrypt <file>` when saving a decrypted buffer.
-    Default: `1`
-
-g:cottage_clean_on_close                            *g:cottage_clean_on_close*
-    Automatically run `ctg encrypt <file> --clean` when closing/unloading a
-    decrypted buffer.
-    Default: `1`
-
-g:cottage_clean_on_exit                              *g:cottage_clean_on_exit*
-    Ensure all decrypted files are encrypted with `--clean` when Vim exits.
-    Default: `1`
-
-g:cottage_clean_on_leave                            *g:cottage_clean_on_leave*
-    Clean the decrypted file whenever switching focus away from its buffer.
-    Default: `1`
 
 g:cottage_auto_init                                      *g:cottage_auto_init*
     Automatically run `ctg init` when encrypting a file in a workspace without

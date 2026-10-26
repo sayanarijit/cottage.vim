@@ -63,186 +63,103 @@ function! RunAllTests() abort
     call cottage#ensure_initialized(l:root)
     call Assert(isdirectory(l:test_dir . '/.cottage'), '.cottage directory created by ensure_initialized')
 
-    " Test 4: Create plaintext and encrypt via ctg
+    " Test 4: Open & decrypt in memory
     echomsg '--- Test 4: Open & Decrypt *.cott.age ---'
-    call writefile(['MY_SECRET=supersecret123'], l:test_dir . '/app.env')
-    call system('ctg encrypt app.env --clean')
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned by ctg encrypt --clean')
-    call Assert(filereadable(l:test_dir . '/app.env.cott.age'), 'app.env.cott.age exists')
+    call system('ctg cat app.env.cott.age', "MY_SECRET=supersecret123\n")
+    call Assert(filereadable(l:test_dir . '/app.env.cott.age'), 'app.env.cott.age created via stdin')
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'no plaintext app.env on disk')
 
-    " Open the .cott.age file
     edit app.env.cott.age
     call AssertEqual(expand('%:t'), 'app.env', 'Active buffer changed to app.env')
     call AssertEqual(getline(1), 'MY_SECRET=supersecret123', 'Decrypted content matches original secret')
     call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is marked as cottage_tracked')
+    call AssertEqual(&l:buftype, 'acwrite', 'buffer is acwrite')
     call Assert(!&l:swapfile, 'swapfile is disabled on decrypted buffer')
     call Assert(!&l:backup, 'backup is disabled on decrypted buffer')
     call Assert(!&l:writebackup, 'writebackup is disabled on decrypted buffer')
     call Assert(!&l:undofile, 'undofile is disabled by default on decrypted buffer')
-    call Assert(filereadable(l:test_dir . '/app.env'), 'Plaintext app.env exists on disk while open')
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'Plaintext app.env NOT on disk while open')
 
-    " Test 5: Edit and save (sync on save)
-    echomsg '--- Test 5: Edit & Save (Sync) ---'
+    " Test 5: Edit and save
+    echomsg '--- Test 5: Edit & Save ---'
     call setline(1, 'MY_SECRET=modified_secret_456')
     write
-    call Assert(filereadable(l:test_dir . '/app.env'), 'Plaintext app.env still exists after save')
-    call Assert(filereadable(l:test_dir . '/app.env.cott.age'), 'app.env.cott.age exists after save')
+    call Assert(!&modified, 'buffer unmodified after save')
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'Plaintext app.env NOT on disk after save')
 
-    " Test 6: Close buffer (auto clean on close)
-    echomsg '--- Test 6: Close buffer (Auto-clean) ---'
+    " Test 6: Close and re-open
+    echomsg '--- Test 6: Close and re-open ---'
     bwipeout
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'Plaintext app.env removed from disk after buffer close')
     call Assert(filereadable(l:test_dir . '/app.env.cott.age'), 'app.env.cott.age remains on disk')
-
-    " Test 7: Re-open and verify modified content
-    echomsg '--- Test 7: Re-open to verify saved ciphertext ---'
     edit app.env.cott.age
     call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'Re-decrypted content matches updated value')
+    " Writing elsewhere is refused
+    silent! write other_plain.txt
+    call Assert(!filereadable(l:test_dir . '/other_plain.txt'), 'writing decrypted buffer to another path is refused')
     bwipeout
 
-    " Test 8: :CottageEncrypt command on a file argument
-    echomsg '--- Test 8: :CottageEncrypt command ---'
+    " Test 7: :CottageEncrypt on a file argument
+    echomsg '--- Test 7: :CottageEncrypt command ---'
     call writefile(['DATABASE_URL=postgres://localhost/db'], l:test_dir . '/db.env')
-    call Assert(filereadable(l:test_dir . '/db.env'), 'db.env created')
     CottageEncrypt db.env
     call Assert(filereadable(l:test_dir . '/db.env.cott.age'), 'db.env.cott.age created after CottageEncrypt')
     call AssertEqual(expand('%:t'), 'db.env', 'Active buffer is db.env after CottageEncrypt')
     call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked after CottageEncrypt')
     call AssertEqual(getline(1), 'DATABASE_URL=postgres://localhost/db', 'Decrypted content loaded after CottageEncrypt')
     bwipeout
-    call Assert(!filereadable(l:test_dir . '/db.env'), 'db.env cleaned after bwipeout')
 
-    " Test 9: :CottageEncrypt on current buffer without args
-    echomsg '--- Test 9: :CottageEncrypt on current buffer ---'
-    call writefile(['API_KEY=secret_key_789'], l:test_dir . '/api.env')
+    " Test 8: :CottageEncrypt on current buffer (unsaved edits are encrypted)
+    echomsg '--- Test 8: :CottageEncrypt on current buffer ---'
+    call writefile(['API_KEY=old'], l:test_dir . '/api.env')
     edit api.env
-    call AssertEqual(expand('%:t'), 'api.env', 'api.env opened in buffer')
+    call setline(1, 'API_KEY=secret_key_789')
     CottageEncrypt
-    call Assert(filereadable(l:test_dir . '/api.env.cott.age'), 'api.env.cott.age created after CottageEncrypt current buffer')
-    call AssertEqual(expand('%:t'), 'api.env', 'Active buffer is api.env after CottageEncrypt current buffer')
-    call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked after CottageEncrypt current buffer')
-    call AssertEqual(getline(1), 'API_KEY=secret_key_789', 'Buffer content matches after CottageEncrypt current buffer')
-    bwipeout
-    call Assert(!filereadable(l:test_dir . '/api.env'), 'api.env cleaned after bwipeout')
-
-    " Test 10: :CottageDecrypt command
-    echomsg '--- Test 10: :CottageDecrypt command ---'
-    CottageDecrypt db.env.cott.age
-    call AssertEqual(expand('%:t'), 'db.env', 'Buffer is db.env after CottageDecrypt')
-    call AssertEqual(getline(1), 'DATABASE_URL=postgres://localhost/db', 'Decrypted content matches via command')
+    call Assert(filereadable(l:test_dir . '/api.env.cott.age'), 'api.env.cott.age created')
+    call AssertEqual(expand('%:t'), 'api.env', 'Active buffer is api.env')
+    call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked')
+    call AssertEqual(getline(1), 'API_KEY=secret_key_789', 'Unsaved buffer content was encrypted')
     bwipeout
 
-    " Test 11: Clean on exit
-    echomsg '--- Test 11: Clean on VimLeavePre ---'
-    edit app.env.cott.age
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
-    call cottage#on_vim_leave()
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned on vim leave')
-    bwipeout!
-
-    " Test 12: Buffer switching with hidden enabled (clean on hide, restore on enter)
-    echomsg '--- Test 12: Buffer switching (BufHidden / BufEnter) ---'
+    " Test 10: Hidden buffers and splits keep content, nothing hits disk
+    echomsg '--- Test 10: Buffer switching ---'
     set hidden
     call writefile(['OTHER_CONTENT'], l:test_dir . '/other.txt')
     edit app.env.cott.age
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
-    call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'app.env has expected secret')
-
-    " Switch away to other.txt
     edit other.txt
-    call AssertEqual(expand('%:t'), 'other.txt', 'Active buffer changed to other.txt')
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned from disk when hidden')
-
-    " Switch back to app.env
     b app.env
-    call AssertEqual(expand('%:t'), 'app.env', 'Active buffer changed back to app.env')
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env restored on disk upon buffer re-entry')
-    call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'app.env content preserved')
-
-    " Edit, save, and switch away again
+    call AssertEqual(getline(1), 'MY_SECRET=modified_secret_456', 'content preserved after switching')
     call setline(1, 'MY_SECRET=final_secret_999')
     write
     b other.txt
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned after modified buffer hidden')
-
-    " Clean up hidden buffer
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'no plaintext on disk after switching')
     bwipeout! app.env
     bwipeout! other.txt
-
-    " Test 13: Split windows (do not clean while buffer is visible in another window)
-    echomsg '--- Test 13: Split windows ---'
     edit app.env.cott.age
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
+    call AssertEqual(getline(1), 'MY_SECRET=final_secret_999', 'saved content persisted')
     vsplit other.txt
-    call AssertEqual(expand('%:t'), 'other.txt', 'New split window is other.txt')
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env remains on disk while still visible in window 1')
-    wincmd p
-    call AssertEqual(expand('%:t'), 'app.env', 'Focused window 1 (app.env)')
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env still on disk')
     close!
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned when hidden after window closed')
-    " Test 14: Multiple files open on exit (do not encrypt untracked files)
-    echomsg '--- Test 14: Multiple files open on exit ---'
-    call writefile(['UNTOUCHED_NORMAL_CONTENT'], l:test_dir . '/plain.txt')
-    edit plain.txt
-    vsplit app.env.cott.age
-    call Assert(filereadable(l:test_dir . '/app.env'), 'app.env decrypted on open')
-    call Assert(filereadable(l:test_dir . '/plain.txt'), 'plain.txt exists on disk')
-    call cottage#on_vim_leave()
-    call Assert(!filereadable(l:test_dir . '/app.env'), 'app.env cleaned on exit')
-    call Assert(filereadable(l:test_dir . '/plain.txt'), 'plain.txt still exists on disk')
-    call Assert(!filereadable(l:test_dir . '/plain.txt.cott.age'), 'plain.txt was NOT encrypted')
-    bwipeout! app.env
-    bwipeout! plain.txt
-
-    " Test 15: BufUnload sequence during exit does not leak tracking to untracked buffers
-    echomsg '--- Test 15: BufUnload sequence with untracked buffers ---'
-    call writefile(['OTHER_NORMAL_CONTENT'], l:test_dir . '/other2.txt')
-    edit other2.txt
-    edit app.env.cott.age
-    " While app.env is the active buffer, trigger unload on other2.txt
-    let l:other_bnr = bufnr(l:test_dir . '/other2.txt')
-    if l:other_bnr > 0
-      execute 'bwipeout ' . l:other_bnr
-    endif
-    call Assert(filereadable(l:test_dir . '/other2.txt'), 'other2.txt exists after wipeout')
-    call Assert(!filereadable(l:test_dir . '/other2.txt.cott.age'), 'other2.txt was NOT encrypted upon unload')
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'no plaintext on disk after split closed')
     bwipeout! app.env
 
-    " Test 16: Reopening decrypted file after bdelete is not blank
-    echomsg '--- Test 16: Reopen decrypted file after bdelete ---'
-    call writefile(['REGRESSION_SECRET_KEY=999'], l:test_dir . '/reopen.env')
-    call system('ctg encrypt reopen.env --clean')
-    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env cleaned on disk')
-    call Assert(filereadable(l:test_dir . '/reopen.env.cott.age'), 'reopen.env.cott.age exists on disk')
-    edit reopen.env.cott.age
-    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Initial open has secret')
-    bdelete
-    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env cleaned on disk after bdelete')
-    " Reopen decrypted file directly
-    edit reopen.env
-    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Reopening decrypted file after bdelete is NOT blank')
-    call Assert(filereadable(l:test_dir . '/reopen.env'), 'reopen.env restored on disk')
-
-    " Test 17: Reopening encrypted file after reopening decrypted file is not blank
-    echomsg '--- Test 17: Reopen encrypted file after reopening decrypted file ---'
-    edit reopen.env.cott.age
-    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Reopening encrypted file is NOT blank')
-    bwipeout! reopen.env
-
-    " Test 18: Open decrypted path directly when file does not exist on disk
-    echomsg '--- Test 18: Open decrypted path directly ---'
-    call Assert(!filereadable(l:test_dir . '/reopen.env'), 'reopen.env not on disk')
-    edit reopen.env
-    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'Opening decrypted path directly decrypts content')
+    " Test 11: Open decrypted path directly
+    echomsg '--- Test 11: Open decrypted path directly ---'
+    edit app.env
+    call AssertEqual(getline(1), 'MY_SECRET=final_secret_999', 'Opening decrypted path directly decrypts content')
     call Assert(get(b:, 'cottage_tracked', 0) == 1, 'Buffer is cottage_tracked when opened directly')
-    bwipeout! reopen.env
+    call Assert(!filereadable(l:test_dir . '/app.env'), 'no plaintext on disk')
+    call setline(1, 'MY_SECRET=via_direct')
+    write
+    bwipeout!
+    edit app.env.cott.age
+    call AssertEqual(getline(1), 'MY_SECRET=via_direct', 'write from directly opened buffer persisted')
+    bwipeout!
 
-    " Test 19: :CottageDecrypt with decrypted filename argument
-    echomsg '--- Test 19: CottageDecrypt with decrypted filename ---'
-    CottageDecrypt reopen.env
-    call AssertEqual(getline(1), 'REGRESSION_SECRET_KEY=999', 'CottageDecrypt reopen.env decrypts and opens content')
-    bwipeout! reopen.env
+    " Test 12: Untracked buffers untouched
+    echomsg '--- Test 12: Untracked buffers ---'
+    edit other.txt
+    write
+    call Assert(!filereadable(l:test_dir . '/other.txt.cott.age'), 'other.txt was NOT encrypted')
+    bwipeout!
 
     execute 'cd ' . fnameescape(l:orig_cwd)
     call delete(l:test_dir, 'rf')

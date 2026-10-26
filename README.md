@@ -8,8 +8,8 @@ Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](ht
 
 - **Auto-decrypts** `.cott.age` files into their plaintext form when opened for editing.
 - **Auto-detects / downloads** `ctg` using the best available package manager if missing.
-- **Syncs on save** (`:w`): re-encrypts the ciphertext sibling while you continue editing.
-- **Auto-encrypts and cleans on close**: when closing the buffer (`:bd`, `:bw`, `:q`) or exiting Vim (`:qa`), re-encrypts and deletes the plaintext secret file from disk.
+- **Encrypts on save** (`:w`): pipes the buffer straight into `ctg` and updates the ciphertext.
+- **Memory only**: plaintext is never written to disk; secrets live only in the editor buffer.
 - **Safe by default**: automatically disables swapfiles, backup files, and persistent undofiles on decrypted buffers to prevent secrets from leaking into disk caches.
 
 ---
@@ -57,16 +57,15 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 1. **Opening a `.cott.age` file**:
    When you run `vim secret.env.cott.age` or `:edit secret.env.cott.age`:
-   - `cottage.vim` runs `ctg decrypt secret.env.cott.age`.
-   - The buffer is loaded as `secret.env` with full syntax highlighting, filetype plugins, and LSP support.
+   - `cottage.vim` runs `ctg cat -- secret.env.cott.age` and loads the output into an in-memory buffer.
+   - The buffer is named `secret.env` with full syntax highlighting, filetype plugins, and LSP support.
 
 2. **Editing and saving**:
-   - Whenever you save with `:w`, `cottage.vim` runs `ctg encrypt secret.env` to keep `secret.env.cott.age` updated.
-   - The plaintext file remains available on disk while you are actively working in the buffer.
+   - Whenever you save with `:w`, `cottage.vim` passes the buffer content to the stdin of `ctg cat secret.env.cott.age`, which re-encrypts it.
+   - No plaintext file is ever created on disk.
 
 3. **Closing or exiting**:
-   - When you close the buffer (`:bd`, `:bw`, `:q`), or exit the editor (`:qa`), `cottage.vim` runs `ctg encrypt secret.env --clean`.
-   - The plaintext file is safely removed from disk, leaving only the encrypted `.cott.age` file.
+   - Nothing to clean up: closing the buffer simply discards the in-memory plaintext.
 
 4. **Auto-downloading `ctg`**:
    - If `ctg` is not found on your system PATH, `cottage.vim` automatically detects the best package manager and installs it.
@@ -78,15 +77,7 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 | Command                  | Description                                                                                                                                                         |
 | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) with `ctg encrypt <file> --clean` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. |
-| `:CottageDecrypt [file]` | Decrypts the specified `.cott.age` file and opens it.                                                                                                               |
-| `:CottageInstall`        | Detects the best available package registry and installs `ctg`.                                                                                                     |
-| `:CottageInit [dir]`     | Initializes cottage (`ctg init`) in the workspace or specified directory.                                                                                           |
-| `:CottageClean`          | Deletes all decrypted secret files in the workspace via `ctg clean -qqq`.                                                                                           |
-| `:CottageStatus`         | Displays `ctg status` output in a preview window.                                                                                                                   |
-| `:CottageDiff [file]`    | Displays `ctg diff` output in a diff buffer.                                                                                                                        |
-| `:CottagePull`           | Pulls upstream cottage secrets.                                                                                                                                     |
-| `:CottagePush`           | Pushes cottage secrets upstream.                                                                                                                                    |
+| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) from memory via `ctg cat` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. The original plaintext file is left for you to remove. |
 
 ---
 
@@ -105,18 +96,6 @@ let g:cottage_auto_install = 1
 
 " Custom path to ctg binary (default: auto-detected)
 let g:cottage_bin = ''
-
-" Sync encryption on save (default: 1)
-let g:cottage_sync_on_save = 1
-
-" Encrypt and delete plaintext on buffer close (default: 1)
-let g:cottage_clean_on_close = 1
-
-" Encrypt and delete plaintext when exiting Vim (default: 1)
-let g:cottage_clean_on_exit = 1
-
-" Encrypt and delete plaintext on buffer leave / focus switch (default: 1)
-let g:cottage_clean_on_leave = 1
 
 " Auto-run ctg init if needed during :CottageEncrypt (default: 1)
 let g:cottage_auto_init = 1
@@ -139,9 +118,6 @@ let g:cottage_quiet = 0
 ```lua
 vim.g.cottage_enabled = 1
 vim.g.cottage_auto_install = 1
-vim.g.cottage_sync_on_save = 1
-vim.g.cottage_clean_on_close = 1
-vim.g.cottage_clean_on_exit = 1
 vim.g.cottage_disable_swapfile = 1
 vim.g.cottage_disable_backup = 1
 vim.g.cottage_disable_undofile = 1
@@ -167,7 +143,7 @@ Run `:checkhealth cottage` in Neovim to verify your environment:
 - **No Swapfile Leaks**: `noswapfile` prevents secret plaintext from being written into `.swp` swap files.
 - **No Backup Leaks**: `nobackup` and `nowritebackup` prevent secret plaintext backups on disk.
 - **No Undofile Leaks**: `noundofile` prevents persistent undo history containing plaintext secrets from being written to disk.
-- **Guaranteed Cleanup**: `VimLeavePre` and `BufUnload` hooks ensure all tracked plaintext secret files are cleanly encrypted and erased from disk.
+- **No Plaintext on Disk**: secrets are decrypted with `ctg cat` and re-encrypted via stdin, so no decrypted file is ever created. `:w` to any other path is refused.
 
 ---
 

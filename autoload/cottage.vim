@@ -322,10 +322,14 @@ endfunction
 " ----------------------------------------------------------------------------
 " Decrypted Buffer Configuration
 " ----------------------------------------------------------------------------
+" Secrets are only ever decrypted in memory (`ctg cat`) and re-encrypted from
+" memory (`ctg cat` with stdin). Plaintext never touches the disk.
 function! s:setup_decrypted_buffer(dec_path, enc_path) abort
   let b:cottage_tracked = 1
   let b:cottage_decrypted_path = a:dec_path
   let b:cottage_encrypted_path = a:enc_path
+
+  setlocal buftype=acwrite
 
   if get(g:, 'cottage_disable_swapfile', 1)
     setlocal noswapfile
@@ -346,6 +350,16 @@ function! s:setup_decrypted_buffer(dec_path, enc_path) abort
         \ 'encrypted_path': a:enc_path,
         \ 'bufnr': bufnr('%')
         \ }
+
+  augroup cottage_buffer
+    autocmd! * <buffer>
+    autocmd BufWriteCmd <buffer> call cottage#on_buf_write_cmd()
+    autocmd BufWipeout <buffer> call s:untrack(expand('<afile>:p'))
+  augroup END
+endfunction
+
+function! s:untrack(file) abort
+  unlet! s:tracked_files[s:normalize_path(a:file)]
 endfunction
 
 function! s:read_raw_buffer() abort
@@ -355,6 +369,30 @@ function! s:read_raw_buffer() abort
     silent! $delete _
     setlocal nomodified
   endif
+endfunction
+
+" Decrypt enc_path into the current buffer, in memory only.
+function! s:load_decrypted(enc_path, dec_path) abort
+  let l:ctg_bin = cottage#find_ctg()
+  let l:res = s:run_command(shellescape(l:ctg_bin) . ' cat -- ' . shellescape(a:enc_path), fnamemodify(a:enc_path, ':h'))
+  if l:res.code != 0
+    call cottage#error("Failed to decrypt " . fnamemodify(a:enc_path, ':t') . ": " . trim(l:res.output))
+    return 0
+  endif
+
+  let l:lines = split(l:res.output, "\n", 1)
+  if len(l:lines) > 1 && l:lines[-1] ==# ''
+    call remove(l:lines, -1)
+  endif
+
+  setlocal buftype=acwrite
+  setlocal modifiable
+  silent %delete _
+  call setline(1, l:lines)
+  setlocal nomodified
+  call s:setup_decrypted_buffer(a:dec_path, a:enc_path)
+  filetype detect
+  return 1
 endfunction
 
 " ----------------------------------------------------------------------------
@@ -381,49 +419,28 @@ function! cottage#on_buf_read_cmd() abort
 
   try
     if !cottage#ensure_installed()
-      call cottage#error("ctg binary not found. Run :CottageInstall to install it.")
+      call cottage#error("ctg binary not found. Install it manually or set g:cottage_auto_install = 1.")
       call s:read_raw_buffer()
       return
     endif
 
     let l:dec_path = s:get_decrypted_path(l:enc_path)
-    let l:norm_dec = s:normalize_path(l:dec_path)
-    let l:ctg_bin = cottage#find_ctg()
-    let l:file_dir = fnamemodify(l:enc_path, ':h')
 
-    " Check if decrypted buffer is already open
+    " Reuse an already open decrypted buffer if there is one
     let l:existing_buf = s:find_buffer_by_path(l:dec_path)
     if l:existing_buf != -1 && l:existing_buf != l:enc_buf
       execute 'buffer ' . l:existing_buf
       if l:enc_buf != bufnr('%') && bufexists(l:enc_buf)
         execute 'silent! bwipeout! ' . l:enc_buf
       endif
-    elseif l:existing_buf != -1 && l:existing_buf == l:enc_buf
-      " Current buffer is already named decrypted path
-    else
+    elseif l:existing_buf == -1
       execute 'file ' . fnameescape(l:dec_path)
     endif
 
-    " Run ctg decrypt
-    let l:res = s:run_command(shellescape(l:ctg_bin) . ' decrypt ' . shellescape(l:enc_path), l:file_dir)
-    if l:res.code != 0
-      call cottage#error("Failed to decrypt " . fnamemodify(l:enc_path, ':t') . ": " . trim(l:res.output))
+    if !s:load_decrypted(l:enc_path, l:dec_path)
       call s:read_raw_buffer()
       return
     endif
-
-    " Transform current buffer into the decrypted file buffer
-    setlocal buftype=
-    silent %delete _
-    execute 'silent 0read ' . fnameescape(l:dec_path)
-    silent $delete _
-    setlocal nomodified
-
-    " Configure buffer settings and tracking
-    call s:setup_decrypted_buffer(l:dec_path, l:enc_path)
-
-    " Detect filetype for the decrypted file
-    filetype detect
 
     if !get(g:, 'cottage_quiet', 0)
       call cottage#msg("Decrypted " . fnamemodify(l:enc_path, ':t'))
@@ -433,352 +450,85 @@ function! cottage#on_buf_read_cmd() abort
   endtry
 endfunction
 
-function! cottage#on_buf_write_post() abort
-  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_sync_on_save', 1)
+" Opening `foo` directly when only `foo.cott.age` exists on disk.
+function! cottage#on_buf_new_file() abort
+  if !get(g:, 'cottage_enabled', 1)
     return
   endif
 
-  let l:bnr = str2nr(expand('<abuf>'))
-  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
-  if empty(l:file)
+  let l:dec_path = fnamemodify(expand('<afile>'), ':p')
+  if empty(l:dec_path) || s:is_encrypted_file(l:dec_path)
     return
   endif
 
-  let l:norm = s:normalize_path(l:file)
-  let l:enc_path = l:bnr > 0 ? getbufvar(l:bnr, 'cottage_encrypted_path', '') : ''
-  if empty(l:enc_path)
-    let l:enc_path = s:get_encrypted_path(l:file)
-  endif
-
-  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0)) || filereadable(l:enc_path)
-  if !l:is_tracked
+  let l:enc_path = s:get_encrypted_path(l:dec_path)
+  if !filereadable(l:enc_path)
     return
   endif
 
+  let l:norm = s:normalize_path(l:dec_path)
   if has_key(s:in_flight, l:norm)
     return
   endif
   let s:in_flight[l:norm] = 1
 
   try
-    let l:ctg_bin = cottage#find_ctg()
-    if empty(l:ctg_bin)
+    if !cottage#ensure_installed()
       return
     endif
-
-    let l:file_dir = fnamemodify(l:file, ':h')
-    let l:res = s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file), l:file_dir)
-    if l:res.code != 0
-      call cottage#error("Failed to sync encryption for " . fnamemodify(l:file, ':t') . ": " . trim(l:res.output))
-    elseif !get(g:, 'cottage_quiet', 0)
-      call cottage#msg("Synced encryption for " . fnamemodify(l:file, ':t'))
-    endif
-
-    if !has_key(s:tracked_files, l:norm)
-      let s:tracked_files[l:norm] = {
-            \ 'decrypted_path': l:file,
-            \ 'encrypted_path': l:enc_path,
-            \ 'bufnr': l:bnr > 0 ? l:bnr : bufnr('%')
-            \ }
-      if l:bnr > 0
-        call setbufvar(l:bnr, 'cottage_tracked', 1)
-        call setbufvar(l:bnr, 'cottage_decrypted_path', l:file)
-        call setbufvar(l:bnr, 'cottage_encrypted_path', l:enc_path)
-      endif
+    if s:load_decrypted(l:enc_path, l:dec_path) && !get(g:, 'cottage_quiet', 0)
+      call cottage#msg("Decrypted " . fnamemodify(l:enc_path, ':t'))
     endif
   finally
     unlet! s:in_flight[l:norm]
   endtry
 endfunction
 
-function! s:finalize_tracked_file(file, bufnr_val) abort
-  let l:norm = s:normalize_path(a:file)
-  if has_key(s:in_flight, l:norm)
-    return
-  endif
-  let s:in_flight[l:norm] = 1
-
-  try
-    let l:bnr = str2nr(a:bufnr_val)
-
-    if !filereadable(a:file)
-      unlet! s:tracked_files[l:norm]
-      if l:bnr > 0 && bufexists(l:bnr)
-        call setbufvar(l:bnr, '&buftype', 'nofile')
-      endif
-      return
-    endif
-
-    let l:ctg_bin = cottage#find_ctg()
-    if empty(l:ctg_bin)
-      return
-    endif
-
-    if l:bnr > 0 && bufexists(l:bnr) && getbufvar(l:bnr, '&modified')
-      let l:cur_buf = bufnr('%')
-      if l:bnr == l:cur_buf
-        noautocmd silent! write
-      else
-        execute 'noautocmd silent! buffer ' . l:bnr
-        noautocmd silent! write
-        if bufexists(l:cur_buf)
-          execute 'noautocmd silent! buffer ' . l:cur_buf
-        endif
-      endif
-    endif
-
-    let l:file_dir = fnamemodify(a:file, ':h')
-    let l:res = s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(a:file) . ' --clean', l:file_dir)
-    if l:res.code != 0
-      call cottage#error("Failed to encrypt and clean " . fnamemodify(a:file, ':t') . ": " . trim(l:res.output))
-    elseif !get(g:, 'cottage_quiet', 0)
-      call cottage#msg("Encrypted & cleaned " . fnamemodify(a:file, ':t'))
-    endif
-
-    unlet! s:tracked_files[l:norm]
-
-    if l:bnr > 0 && bufexists(l:bnr)
-      call setbufvar(l:bnr, '&buftype', 'nofile')
-    endif
-  finally
-    unlet! s:in_flight[l:norm]
-  endtry
-endfunction
-
-function! cottage#on_buf_hidden() abort
-  if !get(g:, 'cottage_enabled', 1)
-    return
-  endif
-
-  if !get(g:, 'cottage_clean_on_close', 1) && !get(g:, 'cottage_clean_on_leave', 1)
-    return
-  endif
-
-  let l:bnr = str2nr(expand('<abuf>'))
-  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
-  if empty(l:file)
-    return
-  endif
-
-  let l:norm = s:normalize_path(l:file)
-  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
-  if !l:is_tracked
-    return
-  endif
-
-  call s:finalize_tracked_file(l:file, l:bnr)
-endfunction
-
-function! cottage#on_buf_unload() abort
-  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_clean_on_close', 1)
-    return
-  endif
-
-  let l:bnr = str2nr(expand('<abuf>'))
-  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
-  if empty(l:file)
-    return
-  endif
-
-  let l:norm = s:normalize_path(l:file)
-  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
-  if !l:is_tracked
-    return
-  endif
-
-  call s:finalize_tracked_file(l:file, l:bnr)
-endfunction
-
-function! cottage#on_buf_enter() abort
-  if !get(g:, 'cottage_enabled', 1)
-    return
-  endif
-
-  let l:bnr = bufnr('%')
-  let l:file = fnamemodify(bufname(l:bnr), ':p')
-  if empty(l:file) || s:is_encrypted_file(l:file)
-    return
-  endif
-
-  let l:norm_dec = s:normalize_path(l:file)
-  if has_key(s:in_flight, l:norm_dec)
-    return
-  endif
-
-  let l:enc_path = getbufvar(l:bnr, 'cottage_encrypted_path', '')
-  if empty(l:enc_path)
-    let l:enc_path = s:get_encrypted_path(l:file)
-  endif
-
-  let l:is_tracked = getbufvar(l:bnr, 'cottage_tracked', 0) || has_key(s:tracked_files, l:norm_dec)
-  if !l:is_tracked
-    if !filereadable(l:enc_path)
-      return
-    endif
-    let l:is_tracked = 1
-  endif
-
-  let s:in_flight[l:norm_dec] = 1
-  try
-    let l:ctg_bin = cottage#find_ctg()
-    if empty(l:ctg_bin) && !cottage#ensure_installed()
-      return
-    endif
-    let l:ctg_bin = cottage#find_ctg()
-    if empty(l:ctg_bin)
-      return
-    endif
-
-    let l:file_dir = fnamemodify(l:enc_path, ':h')
-
-    " Check if we need to decrypt / reload buffer
-    let l:needs_decrypt = 0
-    if filereadable(l:enc_path)
-      if !filereadable(l:file)
-        let l:needs_decrypt = 1
-      elseif &buftype ==# 'nofile'
-        let l:needs_decrypt = 1
-      elseif line('$') == 1 && getline(1) ==# '' && !&modified
-        let l:needs_decrypt = 1
-      elseif getftime(l:enc_path) > getftime(l:file) && !&modified
-        let l:needs_decrypt = 1
-      endif
-    endif
-
-    if l:needs_decrypt
-      let l:res = s:run_command(shellescape(l:ctg_bin) . ' decrypt ' . shellescape(l:enc_path), l:file_dir)
-      if l:res.code == 0
-        setlocal buftype=
-        silent %delete _
-        execute 'silent 0read ' . fnameescape(l:file)
-        silent $delete _
-        setlocal nomodified
-        call s:setup_decrypted_buffer(l:file, l:enc_path)
-        filetype detect
-        if !get(g:, 'cottage_quiet', 0)
-          call cottage#msg("Decrypted " . fnamemodify(l:enc_path, ':t'))
-        endif
-      else
-        call cottage#error("Failed to decrypt " . fnamemodify(l:enc_path, ':t') . ": " . trim(l:res.output))
-      endif
-    else
-      if &buftype ==# 'nofile'
-        setlocal buftype=
-        if filereadable(l:file) && line('$') == 1 && getline(1) ==# '' && !&modified
-          silent %delete _
-          execute 'silent 0read ' . fnameescape(l:file)
-          silent $delete _
-          setlocal nomodified
-        endif
-      endif
-      call s:setup_decrypted_buffer(l:file, l:enc_path)
-    endif
-  finally
-    unlet! s:in_flight[l:norm_dec]
-  endtry
-endfunction
-
-function! cottage#on_buf_leave() abort
-  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_clean_on_leave', 1)
-    return
-  endif
-
-  let l:bnr = str2nr(expand('<abuf>'))
-  let l:file = l:bnr > 0 ? fnamemodify(bufname(l:bnr), ':p') : fnamemodify(expand('<afile>'), ':p')
-  if empty(l:file)
-    return
-  endif
-
-  let l:norm = s:normalize_path(l:file)
-  let l:is_tracked = has_key(s:tracked_files, l:norm) || (l:bnr > 0 && getbufvar(l:bnr, 'cottage_tracked', 0))
-  if !l:is_tracked
-    return
-  endif
-
-  if l:bnr > 0 && exists('*win_findbuf')
-    let l:wins = win_findbuf(l:bnr)
-    if len(l:wins) > 1
-      return
-    endif
-  endif
-
-  call s:finalize_tracked_file(l:file, l:bnr)
-endfunction
-
-function! cottage#on_vim_leave() abort
-  if !get(g:, 'cottage_enabled', 1) || !get(g:, 'cottage_clean_on_exit', 1)
-    return
-  endif
-
+" Encrypt `lines` straight to enc_path via stdin, without any plaintext on disk.
+function! s:encrypt_lines(lines, enc_path) abort
   let l:ctg_bin = cottage#find_ctg()
   if empty(l:ctg_bin)
-    return
+    return {'code': 1, 'output': 'ctg binary not found'}
   endif
-
-  for [l:norm, l:meta] in items(s:tracked_files)
-    let l:file = l:meta.decrypted_path
-    if !filereadable(l:file)
-      continue
-    endif
-    let l:bnr = get(l:meta, 'bufnr', -1)
-    if l:bnr > 0 && bufexists(l:bnr) && getbufvar(l:bnr, '&modified')
-      let l:cur_buf = bufnr('%')
-      if l:bnr == l:cur_buf
-        noautocmd silent! write
-      else
-        execute 'noautocmd silent! buffer ' . l:bnr
-        noautocmd silent! write
-        if bufexists(l:cur_buf)
-          execute 'noautocmd silent! buffer ' . l:cur_buf
-        endif
-      endif
-    endif
-    let l:file_dir = fnamemodify(l:file, ':h')
-    call s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file) . ' --clean', l:file_dir)
-  endfor
-
-  for l:b in range(1, bufnr('$'))
-    if bufexists(l:b) && getbufvar(l:b, 'cottage_tracked', 0)
-      let l:file = getbufvar(l:b, 'cottage_decrypted_path', '')
-      if !empty(l:file) && filereadable(l:file)
-        if getbufvar(l:b, '&modified')
-          let l:cur_buf = bufnr('%')
-          if l:b == l:cur_buf
-            noautocmd silent! write
-          else
-            execute 'noautocmd silent! buffer ' . l:b
-            noautocmd silent! write
-            if bufexists(l:cur_buf)
-              execute 'noautocmd silent! buffer ' . l:cur_buf
-            endif
-          endif
-        endif
-        let l:file_dir = fnamemodify(l:file, ':h')
-        call s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file) . ' --clean', l:file_dir)
-      endif
-    endif
-  endfor
-
-  let s:tracked_files = {}
+  let l:input = join(a:lines, "\n") . "\n"
+  if empty(trim(l:input))
+    " `ctg cat` treats empty stdin as a request to decrypt
+    return {'code': 1, 'output': 'refusing to encrypt empty content'}
+  endif
+  let l:cmd = shellescape(l:ctg_bin) . ' cat -- ' . shellescape(a:enc_path)
+  let l:prev = getcwd()
+  execute 'lcd ' . fnameescape(fnamemodify(a:enc_path, ':h'))
+  try
+    let l:out = system(l:cmd, l:input)
+    return {'code': v:shell_error, 'output': l:out}
+  finally
+    execute 'lcd ' . fnameescape(l:prev)
+  endtry
 endfunction
 
-" ----------------------------------------------------------------------------
-" Output Viewer Window
-" ----------------------------------------------------------------------------
-function! s:display_output(title, content, ...) abort
-  let l:ft = a:0 > 0 ? a:1 : ''
-  if empty(trim(a:content))
-    call cottage#msg(a:title . ': No output.')
+function! cottage#on_buf_write_cmd() abort
+  let l:bnr = str2nr(expand('<abuf>'))
+  let l:enc_path = getbufvar(l:bnr, 'cottage_encrypted_path', '')
+  let l:dec_path = getbufvar(l:bnr, 'cottage_decrypted_path', '')
+  if empty(l:enc_path)
     return
   endif
 
-  botright new
-  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted nowrap
-  let &l:filetype = l:ft
-  let l:lines = split(a:content, "\n")
-  call setline(1, l:lines)
-  setlocal nomodifiable
-  nnoremap <buffer> <silent> q :close<CR>
+  if s:normalize_path(expand('<afile>')) !=# s:normalize_path(l:dec_path)
+    call cottage#error("Refusing to write decrypted content to " . expand('<afile>') . ". Only the secret itself can be saved.")
+    return
+  endif
+
+  let l:res = s:encrypt_lines(getbufline(l:bnr, 1, '$'), l:enc_path)
+  if l:res.code != 0
+    call cottage#error("Failed to encrypt " . fnamemodify(l:dec_path, ':t') . ": " . trim(l:res.output))
+    return
+  endif
+
+  call setbufvar(l:bnr, '&modified', 0)
+  if !get(g:, 'cottage_quiet', 0)
+    call cottage#msg("Encrypted " . fnamemodify(l:dec_path, ':t'))
+  endif
 endfunction
 
 " ----------------------------------------------------------------------------
@@ -796,192 +546,48 @@ function! cottage#cmd_encrypt(...) abort
     return
   endif
 
-  if !filereadable(l:file)
+  let l:bnr = s:find_buffer_by_path(l:file)
+  if l:bnr != -1 && getbufvar(l:bnr, 'cottage_tracked', 0)
+    call cottage#warn("Already a cottage secret; just :write it: " . fnamemodify(l:file, ':t'))
+    return
+  endif
+
+  " Prefer the in-memory buffer (may hold unsaved edits) over the file on disk
+  if l:bnr != -1 && bufloaded(l:bnr)
+    let l:lines = getbufline(l:bnr, 1, '$')
+  elseif filereadable(l:file)
+    let l:lines = readfile(l:file)
+  else
     call cottage#error("File not found: " . l:file)
     return
   endif
 
   if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found. Run :CottageInstall to install it.")
+    call cottage#error("ctg binary not found. Install it manually or set g:cottage_auto_install = 1.")
     return
   endif
 
-  let l:ctg_bin = cottage#find_ctg()
-  let l:file_dir = fnamemodify(l:file, ':h')
-  let l:root = cottage#get_root(l:file_dir)
-
+  let l:root = cottage#get_root(fnamemodify(l:file, ':h'))
   if get(g:, 'cottage_auto_init', 1)
     call cottage#ensure_initialized(l:root)
   endif
 
-  let l:bnr = bufnr(fnameescape(l:file))
-  if l:bnr != -1 && bufexists(l:bnr) && getbufvar(l:bnr, '&modified')
-    let l:cur_buf = bufnr('%')
-    if l:bnr == l:cur_buf
-      noautocmd silent! write
-    else
-      execute 'noautocmd silent! buffer ' . l:bnr
-      noautocmd silent! write
-      if bufexists(l:cur_buf)
-        execute 'noautocmd silent! buffer ' . l:cur_buf
-      endif
-    endif
-  endif
-
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' encrypt ' . shellescape(l:file) . ' --clean', l:root)
+  let l:enc_file = s:get_encrypted_path(l:file)
+  let l:res = s:encrypt_lines(l:lines, l:enc_file)
   if l:res.code != 0
     call cottage#error("Encryption failed: " . trim(l:res.output))
     return
   endif
 
-  let l:norm = s:normalize_path(l:file)
-  unlet! s:tracked_files[l:norm]
-
-  let l:enc_file = s:get_encrypted_path(l:file)
-  if l:bnr != -1 && bufexists(l:bnr)
+  if l:bnr != -1
     execute 'silent! bwipeout! ' . l:bnr
   endif
-
   execute 'edit ' . fnameescape(l:enc_file)
 
   call cottage#msg("Encrypted " . fnamemodify(l:file, ':t') . " -> " . fnamemodify(l:enc_file, ':t'))
-endfunction
-
-function! cottage#cmd_decrypt(...) abort
-  let l:file = a:0 > 0 && !empty(a:1) ? fnamemodify(a:1, ':p') : fnamemodify(expand('%:p'), ':p')
-  if empty(l:file)
-    call cottage#error("No file specified to decrypt.")
-    return
+  if filereadable(l:file)
+    call cottage#warn("Plaintext " . fnamemodify(l:file, ':t') . " is still on disk; remove it yourself.")
   endif
-
-  if !s:is_encrypted_file(l:file) && filereadable(s:get_encrypted_path(l:file))
-    let l:file = s:get_encrypted_path(l:file)
-  endif
-
-  if !s:is_encrypted_file(l:file)
-    call cottage#error("File is not a .cott.age encrypted file: " . fnamemodify(l:file, ':t'))
-    return
-  endif
-
-  if !filereadable(l:file)
-    call cottage#error("File not found: " . l:file)
-    return
-  endif
-
-  execute 'edit ' . fnameescape(l:file)
-endfunction
-
-function! cottage#cmd_init(...) abort
-  let l:dir = a:0 > 0 && !empty(a:1) ? fnamemodify(a:1, ':p') : cottage#get_root(getcwd())
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found. Run :CottageInstall to install it.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' init', l:dir)
-  if l:res.code != 0
-    call cottage#error("ctg init failed: " . trim(l:res.output))
-  else
-    call cottage#msg("Initialized cottage in " . l:dir)
-  endif
-endfunction
-
-function! cottage#cmd_clean() abort
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:root = cottage#get_root(getcwd())
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' clean -qqq', l:root)
-  let s:tracked_files = {}
-  if l:res.code != 0
-    call cottage#error("ctg clean failed: " . trim(l:res.output))
-  else
-    call cottage#msg("Cleaned all decrypted secrets and identity files.")
-  endif
-endfunction
-
-function! cottage#cmd_status() abort
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:root = cottage#get_root(getcwd())
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' status', l:root)
-  if l:res.code != 0
-    call cottage#error("ctg status failed: " . trim(l:res.output))
-  else
-    call s:display_output("Cottage Status", l:res.output)
-  endif
-endfunction
-
-function! cottage#cmd_diff(...) abort
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:root = cottage#get_root(getcwd())
-  let l:target = a:0 > 0 && !empty(a:1) ? ' ' . shellescape(a:1) : ''
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' diff' . l:target, l:root)
-  if l:res.code != 0
-    call cottage#error("ctg diff failed: " . trim(l:res.output))
-  else
-    call s:display_output("Cottage Diff", l:res.output, "diff")
-  endif
-endfunction
-
-function! cottage#cmd_pull() abort
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:root = cottage#get_root(getcwd())
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' pull', l:root)
-  if l:res.code != 0
-    call cottage#error("ctg pull failed: " . trim(l:res.output))
-  else
-    call cottage#msg("Pulled secrets successfully: " . trim(l:res.output))
-  endif
-endfunction
-
-function! cottage#cmd_push() abort
-  if !cottage#ensure_installed()
-    call cottage#error("ctg binary not found.")
-    return
-  endif
-
-  let l:ctg_bin = cottage#find_ctg()
-  let l:root = cottage#get_root(getcwd())
-  let l:res = s:run_command(shellescape(l:ctg_bin) . ' push', l:root)
-  if l:res.code != 0
-    call cottage#error("ctg push failed: " . trim(l:res.output))
-  else
-    call cottage#msg("Pushed secrets successfully: " . trim(l:res.output))
-  endif
-endfunction
-
-" ----------------------------------------------------------------------------
-" Command Completion Helpers
-" ----------------------------------------------------------------------------
-function! cottage#complete_encrypted(ArgLead, CmdLine, CursorPos) abort
-  let l:pattern = empty(a:ArgLead) ? '*' : a:ArgLead . '*'
-  let l:files = glob(l:pattern, 0, 1)
-  let l:result = []
-  for l:f in l:files
-    if l:f =~# '\.cott\.age$' || isdirectory(l:f)
-      call add(l:result, isdirectory(l:f) ? l:f . '/' : l:f)
-    endif
-  endfor
-  return l:result
 endfunction
 
 " ----------------------------------------------------------------------------
