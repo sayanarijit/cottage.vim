@@ -2,8 +2,6 @@
 
 Transparent age-encrypted secrets management in Vim and Neovim with [Cottage](https://github.com/sayanarijit/cottage).
 
-[![demo](https://asciinema.org/a/1264076.svg)](https://asciinema.org/a/1264076)
-
 `cottage.vim` manages `.cott.age` files transparently:
 
 - **Auto-decrypts** `.cott.age` files into their plaintext form when opened for editing.
@@ -75,8 +73,8 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 ## Commands
 
-| Command                  | Description                                                                                                                                                         |
-| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command                  | Description                                                                                                                                                                                                        |
+| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) from memory via `ctg cat` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. The original plaintext file is left for you to remove. |
 
 ---
