@@ -323,7 +323,7 @@ endfunction
 " Decrypted Buffer Configuration
 " ----------------------------------------------------------------------------
 " Secrets are only ever decrypted in memory (`ctg cat`) and re-encrypted from
-" memory (`ctg cat` with stdin). Plaintext never touches the disk.
+" memory (`ctg tee` with stdin). Plaintext never touches the disk.
 function! s:setup_decrypted_buffer(dec_path, enc_path) abort
   let b:cottage_tracked = 1
   let b:cottage_decrypted_path = a:dec_path
@@ -491,11 +491,7 @@ function! s:encrypt_lines(lines, enc_path) abort
     return {'code': 1, 'output': 'ctg binary not found'}
   endif
   let l:input = join(a:lines, "\n") . "\n"
-  if empty(trim(l:input))
-    " `ctg cat` treats empty stdin as a request to decrypt
-    return {'code': 1, 'output': 'refusing to encrypt empty content'}
-  endif
-  let l:cmd = shellescape(l:ctg_bin) . ' cat -- ' . shellescape(a:enc_path)
+  let l:cmd = shellescape(l:ctg_bin) . ' tee -- ' . shellescape(a:enc_path)
   let l:prev = getcwd()
   execute 'lcd ' . fnameescape(fnamemodify(a:enc_path, ':h'))
   try

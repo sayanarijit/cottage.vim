@@ -61,7 +61,7 @@ Opening `.cott.age` files:
 
 Saving changes:
     When you save the buffer (`:w`), cottage.vim passes its content to the
-    stdin of `ctg cat config.json.cott.age`, which updates the ciphertext.
+    stdin of `ctg tee config.json.cott.age`, which updates the ciphertext.
     Writing to any other path is refused.
 
 Closing or Exiting:
@@ -73,7 +73,7 @@ Closing or Exiting:
 
 :CottageEncrypt [file]                                        *:CottageEncrypt*
     Encrypts the specified file (or the current buffer's file if omitted)
-    in memory via `ctg cat` (stdin) and opens the resulting `.cott.age`
+    in memory via `ctg tee` (stdin) and opens the resulting `.cott.age`
     file. The original plaintext file is not deleted. If `.cottage` has not
     yet been initialized in the workspace, it initializes it automatically.
 

@@ -59,7 +59,7 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
    - The buffer is named `secret.env` with full syntax highlighting, filetype plugins, and LSP support.
 
 2. **Editing and saving**:
-   - Whenever you save with `:w`, `cottage.vim` passes the buffer content to the stdin of `ctg cat secret.env.cott.age`, which re-encrypts it.
+   - Whenever you save with `:w`, `cottage.vim` passes the buffer content to the stdin of `ctg tee secret.env.cott.age`, which re-encrypts it.
    - No plaintext file is ever created on disk.
 
 3. **Closing or exiting**:
@@ -75,7 +75,7 @@ git clone https://github.com/sayanarijit/cottage.vim ~/.vim/pack/plugins/start/c
 
 | Command                  | Description                                                                                                                                                                                                        |
 | :----------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) from memory via `ctg cat` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. The original plaintext file is left for you to remove. |
+| `:CottageEncrypt [file]` | Encrypts the specified file (or current buffer) from memory via `ctg tee` and opens the resulting `.cott.age` file. Auto-initializes `.cottage` if missing. The original plaintext file is left for you to remove. |
 
 ---
 
@@ -141,7 +141,7 @@ Run `:checkhealth cottage` in Neovim to verify your environment:
 - **No Swapfile Leaks**: `noswapfile` prevents secret plaintext from being written into `.swp` swap files.
 - **No Backup Leaks**: `nobackup` and `nowritebackup` prevent secret plaintext backups on disk.
 - **No Undofile Leaks**: `noundofile` prevents persistent undo history containing plaintext secrets from being written to disk.
-- **No Plaintext on Disk**: secrets are decrypted with `ctg cat` and re-encrypted via stdin, so no decrypted file is ever created. `:w` to any other path is refused.
+- **No Plaintext on Disk**: secrets are decrypted with `ctg cat` and re-encrypted via `ctg tee` stdin, so no decrypted file is ever created. `:w` to any other path is refused.
 
 ---
 

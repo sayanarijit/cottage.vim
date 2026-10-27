@@ -65,7 +65,7 @@ function! RunAllTests() abort
 
     " Test 4: Open & decrypt in memory
     echomsg '--- Test 4: Open & Decrypt *.cott.age ---'
-    call system('ctg cat app.env.cott.age', "MY_SECRET=supersecret123\n")
+    call system('ctg tee app.env.cott.age', "MY_SECRET=supersecret123\n")
     call Assert(filereadable(l:test_dir . '/app.env.cott.age'), 'app.env.cott.age created via stdin')
     call Assert(!filereadable(l:test_dir . '/app.env'), 'no plaintext app.env on disk')
 
